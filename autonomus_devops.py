@@ -1,6 +1,5 @@
 import os
 import docker
-import time
 from dotenv import load_dotenv
 
 from langchain_openai import AzureChatOpenAI
@@ -56,7 +55,7 @@ def run_container(tag: str, port: int) -> str:
     """Runs docker container."""
     try:
         client = docker.from_env()
-        # stop old container
+
         try:
             old = client.containers.get("agent_runner")
             old.stop()
@@ -64,7 +63,7 @@ def run_container(tag: str, port: int) -> str:
         except:
             pass
 
-        container = client.containers.run(
+        client.containers.run(
             tag,
             name="agent_runner",
             ports={f"{port}/tcp": port},
@@ -77,14 +76,18 @@ def run_container(tag: str, port: int) -> str:
 
 @tool
 def write_github_actions_workflow(name: str, content: str) -> str:
-    """Writes GitHub Actions workflow YML file."""
+    """
+    Writes GitHub workflow ensuring proper LF line endings & indentation.
+    """
     try:
         os.makedirs(".github/workflows", exist_ok=True)
         path = f".github/workflows/{name}.yml"
 
-        # FIX: ensure YAML is written EXACTLY without breaking indentation
-        with open(path, "w", encoding="utf-8") as wf:
-            wf.write(content)
+        # enforce LF and exact content
+        workflow_text = content.replace("\r\n", "\n").replace("\r", "\n")
+
+        with open(path, "w", encoding="utf-8", newline="\n") as wf:
+            wf.write(workflow_text)
 
         return f"Workflow created at {path}"
     except Exception as e:
@@ -92,14 +95,13 @@ def write_github_actions_workflow(name: str, content: str) -> str:
 
 
 @tool
-def git_commit_and_push(message: str = "Automated commit by AI agent") -> str:
+def git_commit_and_push(message: str = "Automated CI/CD commit") -> str:
     """Adds, commits, and pushes."""
     try:
         os.system("git add .")
         os.system(f'git commit -m "{message}"')
-        os.system("git branch")  # debug
-        os.system("git push --force")
-        return "Pushed to GitHub"
+        os.system("git push")
+        return "Changes pushed to GitHub"
     except Exception as e:
         return f"Git push failed: {e}"
 
@@ -148,6 +150,7 @@ def should_continue(state: AgentState):
         return END
     return "tools"
 
+
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", reasoner_node)
 workflow.add_node("tools", tool_executor_node)
@@ -164,23 +167,79 @@ app = workflow.compile()
 if __name__ == "__main__":
     print("🚀 DevOps Agent Starting...\n")
 
+    # THIS IS THE FIXED VERSION - WE ENFORCE A CORRECT TEMPLATE
     prompt = """
 You are a DevOps Agent.
-1. Analyze backend code type.
-2. Write a Dockerfile.
-3. Build Docker image: ai-devops-app.
-4. Run container on port 5000.
-5. Create GitHub Actions workflow named 'ci-cd':
-   - Checkout code
-   - Set up Python
-   - Install dependencies
-   - Lint
-   - Run Tests
-   - Build & Push Docker image to GHCR
-6. Save workflow file as .github/workflows/ci-cd.yml
-7. Git commit and push.
-8. Stop after push.
+
+Always write the GitHub Actions file using EXACTLY this template (modify only if needed):
+
+---
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Run tests
+        run: |
+          pip install pytest
+          pytest
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/ai-devops-app:latest
+
+
+Steps you MUST perform:
+
+1. Detect backend type.
+2. Write Dockerfile.
+3. Build Docker image ai-devops-app.
+4. Run Docker container on port 5000.
+5. Write GitHub Actions workflow EXACTLY using the template.
+6. Save as .github/workflows/ci-cd.yml
+7. Commit & push changes.
+8. Stop.
 """
 
     final_state = app.invoke({"messages": [HumanMessage(content=prompt)]})
+
     print("\n🎉 Pipeline Automation Complete!")
