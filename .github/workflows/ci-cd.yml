@@ -1,20 +1,22 @@
+---
 name: CI/CD Pipeline
 
-on:
+"on":
   push:
     branches:
       - main
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -29,8 +31,11 @@ jobs:
       - name: Lint with flake8
         run: |
           pip install flake8
+          # Stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          # exit-zero treats all errors as warnings.
+          flake8 . --count --exit-zero --max-complexity=10 \
+            --max-line-length=127 --statistics
 
       - name: Run tests
         run: |
@@ -49,4 +54,5 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/ai-devops-app:latest
+          tags: >-
+            ghcr.io/${{ github.repository_owner }}/ai-devops-app:latest
