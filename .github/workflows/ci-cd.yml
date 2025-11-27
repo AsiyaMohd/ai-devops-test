@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: ci-cd
 
 on:
   push:
@@ -29,12 +29,9 @@ jobs:
     - name: Lint with flake8
       run: |
         pip install flake8
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 7 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        flake8 .
 
-    - name: Run tests
+    - name: Run Tests
       run: |
         # Assuming tests can be run with pytest
         pip install pytest
@@ -48,7 +45,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build and push Docker image
-      uses: docker/build-push-action@v3
+      uses: docker/build-push-action@v4
       with:
         context: .
         push: true
