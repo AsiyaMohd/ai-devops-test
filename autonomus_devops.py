@@ -38,7 +38,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ai-devops-app
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
