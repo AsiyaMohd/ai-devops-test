@@ -21,33 +21,23 @@ load_dotenv()
 # ---------------------------------------------------------
 # Fixed workflow template (Strict YAML compliance)
 # ---------------------------------------------------------
-# ---------------------------------------------------------
-# Fixed workflow template (Strict YAML compliance + Fixes)
-# ---------------------------------------------------------
 WORKFLOW_TEMPLATE = """---
 name: CI/CD Pipeline
 
 "on":
   push:
     branches:
-      - main
+      - master
   pull_request:
     branches:
-      - main
+      - master
   workflow_dispatch:
-
-# FIX 1: Grant permission to write to the container registry
 permissions:
   contents: read
   packages: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    # FIX 2: Define image name here to handle casing later
-    env:
-      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ai-devops-app
 
     steps:
       - name: Checkout code
@@ -66,15 +56,16 @@ jobs:
       - name: Lint with flake8
         run: |
           pip install flake8
+          # Stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings.
           flake8 . --count --exit-zero --max-complexity=10 \\
             --max-line-length=127 --statistics
 
       - name: Run tests
         run: |
           pip install pytest
-          # This runs if test files exist, otherwise passes gracefully
-          if [ -f test_app.py ]; then pytest; else echo "No tests found"; fi
+          pytest
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
@@ -82,18 +73,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
-      # FIX 3: Convert uppercase username to lowercase for Docker
-      - name: Lowercase Image Name
-        run: |
-          echo "IMAGE_NAME=${IMAGE_NAME,,}" >>${GITHUB_ENV}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
-          tags: ${{ env.IMAGE_NAME }}:latest
+          tags: >-
+            ghcr.io/${{ github.repository_owner }}/ai-devops-app:latest
 """
 
 # ---------------------------------------------------------
