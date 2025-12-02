@@ -1,115 +1,61 @@
-from flask import Flask, render_template_string, jsonify
-import random
+import os
+import shutil
+import uuid
+import git
+from flask import Flask, render_template, request
+# Import our new Agent class
+from Devopsagent import DevOpsAgent
 
 app = Flask(__name__)
 
-# ---------------------------------------------------------
-# Data Source (In a real app, this might come from a DB)
-# ---------------------------------------------------------
-wisdom_quotes = [
-    "The only way to do great work is to love what you do. - Steve Jobs",
-    "It does not matter how slowly you go as long as you do not stop. - Confucius",
-    "In the middle of every difficulty lies opportunity. - Albert Einstein",
-    "Happiness is not something ready made. It comes from your own actions. - Dalai Lama",
-    "Turn your wounds into wisdom. - Oprah Winfrey",
-    "Simplicity is the ultimate sophistication. - Leonardo da Vinci",
-    "Everything you can imagine is real. - Pablo Picasso"
-]
+# Helper to clean up URLs
+def clean_url(url):
+    return url.strip().rstrip('/')
 
-# ---------------------------------------------------------
-# HTML Template (Embedded for single-file simplicity)
-# ---------------------------------------------------------
-# Usually, this goes into a 'templates/index.html' file.
-html_template = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Wisdom</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 0;
-        }
-        .card {
-            background: white;
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            text-align: center;
-            max-width: 500px;
-            width: 90%;
-        }
-        h1 { color: #333; margin-bottom: 1.5rem; }
-        p { font-size: 1.2rem; color: #555; line-height: 1.6; min-height: 80px; }
-        button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            font-size: 1rem;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        button:hover { background-color: #0056b3; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>💡 Daily Wisdom</h1>
-        <p id="quote-box">{{ initial_quote }}</p>
-        <button onclick="getNewQuote()">Get New Quote</button>
-    </div>
-
-    <script>
-        async function getNewQuote() {
-            const quoteBox = document.getElementById('quote-box');
-            quoteBox.style.opacity = 0; // Fade out effect
-            
-            try {
-                const response = await fetch('/api/quote');
-                const data = await response.json();
-                
-                setTimeout(() => {
-                    quoteBox.innerText = data.quote;
-                    quoteBox.style.opacity = 1; // Fade in
-                }, 300);
-            } catch (error) {
-                console.error('Error fetching quote:', error);
-                quoteBox.innerText = "Failed to load wisdom. Try again!";
-                quoteBox.style.opacity = 1;
-            }
-        }
-    </script>
-</body>
-</html>
-"""
-
-# ---------------------------------------------------------
-# Routes
-# ---------------------------------------------------------
-
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def home():
-    """Renders the main page with an initial random quote."""
-    return render_template_string(html_template, initial_quote=random.choice(wisdom_quotes))
+    agent_report = []
+    submitted_url = None
+    
+    if request.method == 'POST':
+        submitted_url = request.form.get('repoUrl')
+        token = request.form.get('githubToken')
+        
+        # 1. Prepare Paths
+        session_id = str(uuid.uuid4())
+        download_path = os.path.join("./temp_project_files", session_id)
+        
+        # Clean up previous runs to avoid conflicts
+        if os.path.exists(download_path):
+            shutil.rmtree(download_path)
+            
+        # 2. Construct Auth URL (if token provided)
+        clean_repo_url = clean_url(submitted_url)
+        auth_url = clean_repo_url
+        if token and token.strip() and clean_repo_url.startswith("https://"):
+            auth_url = clean_repo_url.replace("https://", f"https://{token}@")
 
-@app.route('/api/quote')
-def get_quote():
-    """API Endpoint to return a random quote as JSON."""
-    return jsonify({'quote': random.choice(wisdom_quotes)})
+        try:
+            # 3. Clone Repository
+            print(f"Cloning {clean_repo_url}...")
+            git.Repo.clone_from(auth_url, download_path)
+            
+            # 4. Trigger Autonomous Agent
+            print("Initializing DevOps Agent...")
+            agent = DevOpsAgent(download_path)
+            
+            # Agent analyzes code and writes Dockerfile/Workflow to the temp folder
+            agent_report = agent.run()
+            print(agent_report)
+            
+            # (Optional) Here you could push the changes back to GitHub 
+            # using repo.index.add and repo.remotes.origin.push()
+            
+        except Exception as e:
+            agent_report = [f"Critical Error: {str(e)}"]
 
-# ---------------------------------------------------------
-# Run the App
-# ---------------------------------------------------------
+    return render_template('index.html', submitted_url=submitted_url, files=agent_report)
+
 if __name__ == '__main__':
-    print("Starting Flask server...")
-    print("Go to http://127.0.0.1:5000/ in your browser")
-    app.run(host='0.0.0.0',debug=True, port=5000)
+    # Ensure you have 'flask' and 'GitPython' installed
+    app.run(debug=True, port=5000,use_reloader=False)
