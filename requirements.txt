@@ -2,3 +2,5 @@ flask
 GitPython
 langchain-openai
 langchain-core
+langgraph
+python-dotenv

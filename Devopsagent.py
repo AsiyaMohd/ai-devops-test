@@ -1,9 +1,19 @@
 import os
 import docker
 import sys
+import socket
 from langchain_core.messages import HumanMessage
 from langchain_openai import AzureChatOpenAI
-
+def find_free_port(start_port=8000, max_retries=100):
+        for port in range(start_port, start_port + max_retries):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                # Try to bind to the port. If successful, it's free.
+                try:
+                    s.bind(('0.0.0.0', port))
+                    return port
+                except OSError:
+                    continue # Port is busy, try next one
+        raise Exception("No free ports found available!")
 class DevOpsAgent:
     def __init__(self, repo_path):
         # FIX: Convert to Absolute Path immediately to prevent Docker "Ghost Builds"
@@ -94,6 +104,7 @@ if __name__ == "__main__":
         {context}
         
         STRICT RULES:
+        Do not mention Dockerfile in first line
         1. Base Image: python:3.9-slim
         2. Workdir: /app
         3. Install: COPY requirements.txt . && pip install --no-cache-dir -r requirements.txt
@@ -120,10 +131,10 @@ if __name__ == "__main__":
 
     def generate_github_workflow(self):
         return ".github/workflows/main.yml (Skipped)"
-
+    
     def deploy_container(self):
         print(f"[DEBUG] Starting Deployment for {self.project_name}...")
-        
+        #host_port=find_free_port(8000)
         try:
             client = docker.from_env()
             # Convert tag to lowercase to comply with Docker rules
@@ -190,12 +201,12 @@ if __name__ == "__main__":
                 image_tag,
                 detach=True,
                 name=image_tag,
-                ports={'5000/tcp': 8000},
+                ports={'5000/tcp': 0},
                 environment=env_vars
             )
             print(f"[DEBUG] Container Started! ID: {container.id}")
             
-            return "✅ Deployed! Access at: http://localhost:8000"
+            return "✅ Deployed! Access at: http://localhost:${host_port}"
 
         except Exception as e:
             print(f"[CRITICAL ERROR] Deployment Failed: {str(e)}")
